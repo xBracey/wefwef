@@ -14,7 +14,11 @@
     "lint:formatting": "prettier --check .",
     "generate:splash:dark": "pwa-asset-generator --type png --index index.html --dark-mode --splash-only --path-override '/splash' public/splash.html public/splash/ && prettier -w index.html",
     "generate:splash:light": "pwa-asset-generator --type png --index index.html --splash-only --path-override '/splash' public/splash.html public/splash/ && prettier -w index.html",
-    "generate:splash": "pnpm generate:splash:dark && pnpm generate:splash:light"
+    "generate:splash": "pnpm generate:splash:dark && pnpm generate:splash:light",
+    "serve": "pm2 start \"NODE_ENV=production PORT=4199 node server.mjs\"",
+    "deploy:first": "git pull && yarn && yarn build && yarn serve",
+    "deploy": "git pull && yarn && yarn build && pm2 reload all",
+    "ssh:deploy": "ssh root@95.216.37.251 \"cd wefwef && yarn deploy\""
   },
   "dependencies": {
     "express": "^4.18.2",
