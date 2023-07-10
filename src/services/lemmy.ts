@@ -14,6 +14,8 @@ const UNPROXIED_LEMMY_SERVERS = [
 ];
 
 function buildBaseUrl(url: string): string {
+  return location.origin;
+
   if (UNPROXIED_LEMMY_SERVERS.includes(url)) {
     return `https://${url}`;
   }
