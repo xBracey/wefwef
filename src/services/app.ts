@@ -1,11 +1,6 @@
 import React, { useEffect, useState } from "react";
 
-const DEFAULT_LEMMY_SERVERS = [
-  "lemmy.world",
-  "lemmy.ml",
-  "beehaw.org",
-  "sh.itjust.works",
-];
+const DEFAULT_LEMMY_SERVERS = ["feddit.uk"];
 
 let _customServers = DEFAULT_LEMMY_SERVERS;
 
