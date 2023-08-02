@@ -15,6 +15,7 @@ import {
   starSharp,
   removeCircleOutline,
   tabletPortraitOutline,
+  eyeOffOutline,
 } from "ionicons/icons";
 import { useContext, useMemo, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../../store";
@@ -29,11 +30,16 @@ import {
   localUserSelector,
   showNsfw,
 } from "../auth/authSlice";
-import { NewPostContext } from "../post/new/NewPostModal";
 import { useBuildGeneralBrowseLink } from "../../helpers/routes";
 import { checkIsMod } from "../../helpers/lemmy";
 import { PageContext } from "../auth/PageContext";
-import { allNSFWHidden, buildBlocked } from "../../helpers/toastMessages";
+import {
+  allNSFWHidden,
+  buildBlocked,
+  buildProblemSubscribing,
+  buildSuccessSubscribing,
+} from "../../helpers/toastMessages";
+import useHidePosts from "../feed/useHidePosts";
 
 interface MoreActionsProps {
   community: string;
@@ -49,14 +55,15 @@ export default function MoreActions({ community }: MoreActionsProps) {
   const isAdmin = useAppSelector(isAdminSelector);
   const localUser = useAppSelector(localUserSelector);
   const [presentActionSheet] = useIonActionSheet();
+  const { presentPostEditor } = useContext(PageContext);
+
+  const hidePosts = useHidePosts();
 
   const { presentLoginIfNeeded } = useContext(PageContext);
 
   const communityByHandle = useAppSelector(
     (state) => state.community.communityByHandle
   );
-
-  const { presentNewPost } = useContext(NewPostContext);
 
   const isSubscribed =
     communityByHandle[community]?.subscribed === "Subscribed" ||
@@ -104,6 +111,11 @@ export default function MoreActions({ community }: MoreActionsProps) {
             icon: createOutline,
           },
           {
+            text: "Hide Read Posts",
+            data: "hide-read",
+            icon: eyeOffOutline,
+          },
+          {
             text: !isSubscribed ? "Subscribe" : "Unsubscribe",
             data: "subscribe",
             icon: !isSubscribed ? heartOutline : heartDislikeOutline,
@@ -129,35 +141,25 @@ export default function MoreActions({ community }: MoreActionsProps) {
             role: "cancel",
           },
         ]}
+        onDidDismiss={() => setOpen(false)}
         onWillDismiss={async (e) => {
-          setOpen(false);
-
           switch (e.detail.data) {
             case "subscribe": {
               if (presentLoginIfNeeded()) return;
 
+              const communityId = communityByHandle[community]?.community.id;
+
+              if (communityId === undefined)
+                throw new Error("community not found");
+
               try {
-                await dispatch(followCommunity(!isSubscribed, community));
+                await dispatch(followCommunity(!isSubscribed, communityId));
               } catch (error) {
-                present({
-                  message: `Problem ${
-                    isSubscribed ? "unsubscribing from" : "subscribing to"
-                  } c/${community}. Please try again.`,
-                  duration: 3500,
-                  position: "bottom",
-                  color: "danger",
-                });
+                present(buildProblemSubscribing(isSubscribed, community));
                 throw error;
               }
 
-              present({
-                message: `${
-                  isSubscribed ? "Unsubscribed from" : "Subscribed to"
-                } c/${community}.`,
-                duration: 3500,
-                position: "bottom",
-                color: "success",
-              });
+              present(buildSuccessSubscribing(isSubscribed, community));
               break;
             }
             case "post": {
@@ -173,7 +175,11 @@ export default function MoreActions({ community }: MoreActionsProps) {
                 return;
               }
 
-              presentNewPost();
+              presentPostEditor(community);
+              break;
+            }
+            case "hide-read": {
+              hidePosts();
               break;
             }
             case "favorite": {

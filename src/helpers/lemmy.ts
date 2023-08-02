@@ -3,12 +3,11 @@ import {
   CommentView,
   Community,
   GetSiteResponse,
+  Post,
 } from "lemmy-js-client";
+import { Share } from "@capacitor/share";
 
-export const LEMMY_SERVERS =
-  "CUSTOM_LEMMY_SERVERS" in window
-    ? (window.CUSTOM_LEMMY_SERVERS as string[])
-    : ["feddit.uk"];
+export const LEMMY_SERVERS = ["feddit.uk"];
 
 export interface LemmyJWT {
   sub: number;
@@ -20,6 +19,7 @@ export interface CommentNodeI {
   comment_view: CommentView;
   children: Array<CommentNodeI>;
   depth: number;
+  missing?: number;
 }
 
 export const MAX_DEFAULT_COMMENT_DEPTH = 5;
@@ -52,8 +52,8 @@ export function getRemoteHandle(
   return `${item.name}@${getItemActorName(item)}`;
 }
 
-export function canModify(comment: CommentView) {
-  return !comment.comment.deleted && !comment.comment.removed;
+export function canModify(comment: Comment) {
+  return !comment.deleted && !comment.removed;
 }
 
 export function buildCommentsTree(
@@ -102,6 +102,51 @@ export function buildCommentsTree(
         }
       }
     }
+  }
+
+  return tree;
+}
+
+/**
+ * Traverse an existing comment tree to determine if there are any
+ * missing comments for a given node
+ *
+ * NOTE: This function mutates the tree to add `missing` to each node!
+ */
+export function buildCommentsTreeWithMissing(
+  comments: CommentView[],
+  parentComment: boolean
+): CommentNodeI[] {
+  const tree = buildCommentsTree(comments, parentComment);
+
+  function childHasMissing(node: CommentNodeI): {
+    missing: boolean;
+    count: number;
+  } {
+    let totalChildren = 0;
+    let missingMarker = false;
+
+    for (const child of node.children) {
+      const res = childHasMissing(child);
+      totalChildren += res.count;
+      if (res.missing) missingMarker = true;
+    }
+
+    const missing =
+      node.comment_view.counts.child_count -
+      node.children.length -
+      totalChildren;
+
+    node.missing = missingMarker ? 0 : missing;
+
+    return {
+      missing: missingMarker || !!missing,
+      count: totalChildren + node.children.length,
+    };
+  }
+
+  for (const node of tree) {
+    childHasMissing(node);
   }
 
   return tree;
@@ -185,19 +230,6 @@ export function getFlattenedChildren(comment: CommentNodeI): CommentView[] {
   return flattenedChildren;
 }
 
-/**
- * NOTE: This assumes NO missing siblings
- */
-export function countMissingDirectChildComments(
-  commentNode: CommentNodeI
-): number {
-  if (commentNode.children.length) {
-    return 0;
-  }
-
-  return commentNode.comment_view.counts.child_count;
-}
-
 export function isUrlImage(url: string): boolean {
   let parsedUrl;
 
@@ -228,4 +260,8 @@ export function isUrlVideo(url: string): boolean {
   }
 
   return parsedUrl.pathname.endsWith(".mp4");
+}
+
+export function share(item: Post | Comment) {
+  return Share.share({ url: item.ap_id });
 }

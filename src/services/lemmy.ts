@@ -1,34 +1,28 @@
 import { LemmyHttp } from "lemmy-js-client";
 import { reduceFileSize } from "../helpers/imageCompress";
-
-const UNPROXIED_LEMMY_SERVERS = [
-  "lemmy.ml",
-  "beehaw.org",
-  "sh.itjust.works",
-  "lemm.ee",
-  "feddit.de",
-  "midwest.social",
-  "lemmynsfw.com",
-  "lemmy.ca",
-  "lemmy.sdf.org",
-];
+import { isNative } from "../helpers/device";
+import { omitUndefinedValues } from "../helpers/object";
 
 function buildBaseUrl(url: string): string {
-  return location.origin;
+  return buildDirectConnectBaseUrl(url);
+}
 
-  if (UNPROXIED_LEMMY_SERVERS.includes(url)) {
-    return `https://${url}`;
-  }
-
-  return buildProxiedBaseUrl(url);
+function buildDirectConnectBaseUrl(url: string): string {
+  return `https://${url}`;
 }
 
 function buildProxiedBaseUrl(url: string): string {
+  if (isNative()) return buildDirectConnectBaseUrl(url);
+
   return `${location.origin}/api/${url}`;
 }
 
 export function getClient(url: string): LemmyHttp {
-  return new LemmyHttp(buildBaseUrl(url));
+  return new LemmyHttp(buildBaseUrl(url), {
+    // Capacitor http plugin is not compatible with cross-fetch.
+    // Bind to globalThis or lemmy-js-client will bind incorrectly
+    fetchFunction: fetch.bind(globalThis),
+  });
 }
 
 export const LIMIT = 30;
@@ -51,6 +45,18 @@ export async function uploadImage(url: string, auth: string, image: File) {
     0.85
   );
 
+  // Cookie header can only be set by native code (Capacitor http plugin)
+  if (isNative()) {
+    const response = await getClient(url).uploadImage({
+      image: compressedImageIfNeeded as File,
+      auth,
+    });
+
+    if (!response.url) throw new Error("unknown native image upload error");
+
+    return response.url;
+  }
+
   const formData = new FormData();
 
   formData.append("images[]", compressedImageIfNeeded);
@@ -72,4 +78,28 @@ export async function uploadImage(url: string, auth: string, image: File) {
   }
 
   throw new Error("unknown image upload error");
+}
+
+interface ImageOptions {
+  /**
+   * maximum image dimension
+   */
+  size?: number;
+}
+
+export function getImageSrc(url: string, options?: ImageOptions) {
+  if (!options || !options.size) return url;
+
+  const urlParams = options
+    ? new URLSearchParams(
+        omitUndefinedValues({
+          thumbnail: options.size
+            ? `${Math.round(options.size * window.devicePixelRatio)}`
+            : undefined,
+          format: "jpg",
+        })
+      )
+    : undefined;
+
+  return `${url}${urlParams ? `?${urlParams}` : ""}`;
 }

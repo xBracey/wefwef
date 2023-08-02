@@ -17,6 +17,7 @@ import { notEmpty } from "../../../helpers/array";
 import { uniqBy } from "lodash";
 import { getHandle } from "../../../helpers/lemmy";
 import { useBuildGeneralBrowseLink } from "../../../helpers/routes";
+import { jwtSelector } from "../../auth/authSlice";
 
 const Backdrop = styled.div`
   position: absolute;
@@ -85,6 +86,7 @@ type Result = Community | SpecialFeed | string;
 
 export default function TitleSearchResults() {
   const router = useIonRouter();
+  const jwt = useAppSelector(jwtSelector);
   const { search, setSearch, searching, setSearching, setOnSubmit } =
     useContext(TitleSearchContext);
   const debouncedSearch = useDebounce(search, 500);
@@ -139,9 +141,13 @@ export default function TitleSearchResults() {
         route = buildGeneralBrowseLink(`/c/${getHandle(c)}`);
       }
 
-      router.push(route, undefined, undefined, undefined, () =>
-        createAnimation()
-      );
+      // TODO - there is an Ionic bug where routerDirection="none" isn't
+      // being respected when routeAction="replace"
+      // https://github.com/ionic-team/ionic-framework/issues/24260
+      // So as a workaround, use blank animation builder.
+      // Unfortunately, this workaround breaks swipe back animation.
+      // Once this is fixed, remove last two parameters
+      router.push(route, "none", "replace", undefined, () => createAnimation());
     },
     [buildGeneralBrowseLink, router]
   );
@@ -197,6 +203,7 @@ export default function TitleSearchResults() {
       type_: "Communities",
       listing_type: "All",
       sort: "TopAll",
+      auth: jwt,
     });
 
     setSearchPayload(result.communities);
@@ -205,7 +212,7 @@ export default function TitleSearchResults() {
   if (!searching) return null;
 
   return (
-    <Backdrop onClick={() => setSearching(false)}>
+    <Backdrop onClick={() => setSearching(false)} slot="fixed">
       <KeyboardContent
         ref={contentRef}
         style={{ maxHeight: `${viewportHeight}px` }}

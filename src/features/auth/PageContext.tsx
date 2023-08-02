@@ -11,9 +11,11 @@ import Login from "../auth/Login";
 import { useAppSelector } from "../../store";
 import { jwtSelector } from "../auth/authSlice";
 import CommentReplyModal from "../comment/reply/CommentReplyModal";
-import { CommentView } from "lemmy-js-client";
+import { Comment, CommentView, PostView } from "lemmy-js-client";
 import CommentEditModal from "../comment/edit/CommentEditModal";
 import { Report, ReportHandle, ReportableItem } from "../report/Report";
+import PostEditorModal from "../post/new/PostEditorModal";
+import SelectTextModal from "../../pages/shared/SelectTextModal";
 
 interface IPageContext {
   // used for ion presentingElement
@@ -25,25 +27,37 @@ interface IPageContext {
   presentLoginIfNeeded: () => boolean;
 
   /**
-   * @returns true if replied (requires feed refresh)
+   * @returns comment payload if replied
    */
-  presentCommentReply: (item: CommentReplyItem) => Promise<boolean>;
+  presentCommentReply: (
+    item: CommentReplyItem
+  ) => Promise<CommentView | undefined>;
 
   /**
    * Will mutate comment in store, which view should be linked to for updates
    * That's why this does not return anything
    */
-  presentCommentEdit: (item: CommentView) => void;
+  presentCommentEdit: (item: Comment) => void;
 
   presentReport: (item: ReportableItem) => void;
+
+  /**
+   * @param postOrCommunity An existing post to be edited, or the community handle
+   * to submit the new post to
+   */
+  presentPostEditor: (postOrCommunity: PostView | string) => void;
+
+  presentSelectText: (text: string) => void;
 }
 
 export const PageContext = createContext<IPageContext>({
   page: undefined,
   presentLoginIfNeeded: () => false,
-  presentCommentReply: async () => false,
+  presentCommentReply: async () => undefined,
   presentCommentEdit: () => false,
   presentReport: () => {},
+  presentPostEditor: () => {},
+  presentSelectText: () => {},
 });
 
 interface PageContextProvider {
@@ -67,10 +81,12 @@ export function PageContextProvider({ value, children }: PageContextProvider) {
 
   // Comment reply start
   const commentReplyItem = useRef<CommentReplyItem>();
-  const commentReplyCb = useRef<((replied: boolean) => void) | undefined>();
+  const commentReplyCb = useRef<
+    ((replied: CommentView | undefined) => void) | undefined
+  >();
   const [isReplyOpen, setIsReplyOpen] = useState(false);
   const presentCommentReply = useCallback((item: CommentReplyItem) => {
-    const promise = new Promise<boolean>(
+    const promise = new Promise<CommentView | undefined>(
       (resolve) => (commentReplyCb.current = resolve)
     );
 
@@ -83,20 +99,41 @@ export function PageContextProvider({ value, children }: PageContextProvider) {
   useEffect(() => {
     if (isReplyOpen) return;
 
-    commentReplyCb.current?.(false);
+    commentReplyCb.current?.(undefined);
     commentReplyCb.current = undefined;
     return;
   }, [isReplyOpen]);
   // Comment reply end
 
   // Edit comment start
-  const commentEditItem = useRef<CommentView>();
+  const commentEditItem = useRef<Comment>();
   const [isEditCommentOpen, setIsEditCommentOpen] = useState(false);
-  const presentCommentEdit = useCallback((item: CommentView) => {
+  const presentCommentEdit = useCallback((item: Comment) => {
     commentEditItem.current = item;
     setIsEditCommentOpen(true);
   }, []);
   // Edit comment end
+
+  // Edit/new post start
+  const postItem = useRef<PostView | string>();
+  const [isPostOpen, setIsPostOpen] = useState(false);
+  const presentPostEditor = useCallback(
+    (postOrCommunity: PostView | string) => {
+      postItem.current = postOrCommunity;
+      setIsPostOpen(true);
+    },
+    []
+  );
+  // Edit/new post end
+
+  // Select text start
+  const selectTextItem = useRef<string | string>();
+  const [isSelectTextOpen, setIsSelectTextOpen] = useState(false);
+  const presentSelectText = useCallback((text: string) => {
+    selectTextItem.current = text;
+    setIsSelectTextOpen(true);
+  }, []);
+  // Select text end
 
   const presentReport = (item: ReportableItem) => {
     reportRef.current?.present(item);
@@ -110,6 +147,8 @@ export function PageContextProvider({ value, children }: PageContextProvider) {
         presentCommentReply,
         presentCommentEdit,
         presentReport,
+        presentPostEditor,
+        presentSelectText,
       }}
     >
       {children}
@@ -119,8 +158,8 @@ export function PageContextProvider({ value, children }: PageContextProvider) {
         item={commentReplyItem.current!}
         isOpen={isReplyOpen}
         setIsOpen={setIsReplyOpen}
-        onReply={(replied) => {
-          commentReplyCb.current?.(replied);
+        onReply={(reply) => {
+          commentReplyCb.current?.(reply);
           commentReplyCb.current = undefined;
         }}
       />
@@ -131,6 +170,18 @@ export function PageContextProvider({ value, children }: PageContextProvider) {
         setIsOpen={setIsEditCommentOpen}
       />
       <Report ref={reportRef} />
+      <PostEditorModal
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        postOrCommunity={postItem.current!}
+        isOpen={isPostOpen}
+        setIsOpen={setIsPostOpen}
+      />
+      <SelectTextModal
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        text={selectTextItem.current!}
+        isOpen={isSelectTextOpen}
+        setIsOpen={setIsSelectTextOpen}
+      />
     </PageContext.Provider>
   );
 }

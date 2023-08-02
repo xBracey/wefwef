@@ -3,10 +3,12 @@ import { useAppSelector } from "./store";
 import useSystemDarkMode from "./helpers/useSystemDarkMode";
 import {
   baseVariables,
-  darkVariables,
-  lightVariables,
+  buildDarkVariables,
+  buildLightVariables,
 } from "./theme/variables";
-import React from "react";
+import React, { useEffect } from "react";
+import { StatusBar, Style } from "@capacitor/status-bar";
+import { isNative } from "./helpers/device";
 
 interface GlobalStylesProps {
   children: React.ReactNode;
@@ -15,7 +17,7 @@ interface GlobalStylesProps {
 export default function GlobalStyles({ children }: GlobalStylesProps) {
   const systemDarkMode = useSystemDarkMode();
   const { fontSizeMultiplier, useSystemFontSize } = useAppSelector(
-    (state) => state.appearance.font
+    (state) => state.settings.appearance.font
   );
 
   const baseFontStyles = useSystemFontSize
@@ -26,11 +28,19 @@ export default function GlobalStyles({ children }: GlobalStylesProps) {
         font-size: ${fontSizeMultiplier}rem;
       `;
 
-  const { userDarkMode, usingSystemDarkMode } = useAppSelector(
-    (state) => state.appearance.dark
+  const { userDarkMode, usingSystemDarkMode, pureBlack } = useAppSelector(
+    (state) => state.settings.appearance.dark
   );
+  const theme = useAppSelector((state) => state.settings.appearance.theme);
 
   const isDark = usingSystemDarkMode ? systemDarkMode : userDarkMode;
+
+  useEffect(() => {
+    if (!isNative()) return;
+
+    StatusBar.setBackgroundColor({ color: isDark ? "#000000" : "#f7f7f7" }); // android only
+    StatusBar.setStyle({ style: isDark ? Style.Dark : Style.Light });
+  }, [isDark]);
 
   return (
     <ThemeProvider theme={{ dark: isDark }}>
@@ -46,7 +56,9 @@ export default function GlobalStyles({ children }: GlobalStylesProps) {
 
           ${baseVariables}
 
-          ${isDark ? darkVariables : lightVariables}
+          ${isDark
+            ? buildDarkVariables(theme, pureBlack)
+            : buildLightVariables(theme)}
         `}
       />
       {children}

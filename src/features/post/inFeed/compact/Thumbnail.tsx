@@ -1,14 +1,16 @@
-import styled from "@emotion/styled";
-import { ReactComponent as SelfSvg } from "./self.svg";
-import { PostView } from "lemmy-js-client";
-import { isUrlImage } from "../../../../helpers/lemmy";
-import { useCallback, useMemo } from "react";
-import { findLoneImage } from "../../../../helpers/markdown";
 import { css } from "@emotion/react";
-import { isNsfw } from "../../../labels/Nsfw";
-import { globeOutline } from "ionicons/icons";
+import styled from "@emotion/styled";
 import { IonIcon } from "@ionic/react";
+import { link, linkOutline } from "ionicons/icons";
+import { PostView } from "lemmy-js-client";
+import { useCallback, useMemo } from "react";
+import { isUrlImage } from "../../../../helpers/lemmy";
+import { findLoneImage } from "../../../../helpers/markdown";
+import { useAppSelector } from "../../../../store";
 import PostGalleryImg from "../../../gallery/PostGalleryImg";
+import { isNsfwBlurred } from "../../../labels/Nsfw";
+import { ReactComponent as SelfSvg } from "./self.svg";
+import { getImageSrc } from "../../../../services/lemmy";
 
 const containerCss = css`
   display: flex;
@@ -41,21 +43,22 @@ const Container = styled.div`
   ${containerCss}
 `;
 
-const LinkIcon = styled(IonIcon)<{ bg: boolean }>`
+const LinkIcon = styled(IonIcon)`
   position: absolute;
-  bottom: 0;
-  right: 0;
-  padding: 4px;
-  font-size: 0.875em;
+  bottom: 3px;
+  right: 3px;
+  padding: 2px;
+  font-size: 14px;
+  color: #444;
 
-  opacity: 0.5;
-  border-top-left-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  opacity: 0.9;
+`;
 
-  ${({ bg }) =>
-    bg &&
-    css`
-      background: rgba(0, 0, 0, 0.4);
-    `}
+const FullsizeIcon = styled(IonIcon)`
+  font-size: 2.5em;
+  opacity: 0.3;
 `;
 
 const imgStyles = (blur: boolean) => css`
@@ -95,8 +98,11 @@ export default function Thumbnail({ post }: ImgProps) {
 
     if (markdownLoneImage) return markdownLoneImage.url;
   })();
+  const blurNsfw = useAppSelector(
+    (state) => state.settings.appearance.posts.blurNsfw
+  );
 
-  const nsfw = useMemo(() => isNsfw(post), [post]);
+  const nsfw = useMemo(() => isNsfwBlurred(post, blurNsfw), [post, blurNsfw]);
 
   const isLink = !postImageSrc && post.post.url;
 
@@ -105,11 +111,18 @@ export default function Thumbnail({ post }: ImgProps) {
       return (
         <>
           {post.post.thumbnail_url ? (
-            <Img src={post.post.thumbnail_url} blur={nsfw} />
+            <>
+              <Img
+                src={getImageSrc(post.post.thumbnail_url, { size: 100 })}
+                blur={nsfw}
+              />
+              <LinkIcon icon={linkOutline} />
+            </>
+          ) : isLink ? (
+            <FullsizeIcon icon={link} />
           ) : (
             <SelfSvg />
           )}
-          <LinkIcon icon={globeOutline} bg={!!post.post.thumbnail_url} />
         </>
       );
     }

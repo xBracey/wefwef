@@ -1,7 +1,6 @@
 import {
   IonBackButton,
   IonButtons,
-  IonContent,
   IonHeader,
   IonPage,
   IonTitle,
@@ -20,12 +19,15 @@ import PostCommentFeed, {
 } from "../../../features/feed/PostCommentFeed";
 import { receivedPosts } from "../../../features/post/postSlice";
 import { receivedComments } from "../../../features/comment/commentSlice";
+import { jwtSelector } from "../../../features/auth/authSlice";
+import FeedContent from "../../shared/FeedContent";
 
 interface SearchPostsResultsProps {
   type: "Posts" | "Comments";
 }
 
 export default function SearchPostsResults({ type }: SearchPostsResultsProps) {
+  const jwt = useAppSelector(jwtSelector);
   const dispatch = useAppDispatch();
   const { search: _encodedSearch } = useParams<{ search: string }>();
   const buildGeneralBrowseLink = useBuildGeneralBrowseLink();
@@ -42,12 +44,13 @@ export default function SearchPostsResults({ type }: SearchPostsResultsProps) {
         type_: type,
         page,
         sort,
+        auth: jwt,
       });
       dispatch(receivedPosts(response.posts));
       dispatch(receivedComments(response.comments));
       return [...response.posts, ...response.comments];
     },
-    [search, client, sort, type, dispatch]
+    [search, client, sort, type, dispatch, jwt]
   );
 
   return (
@@ -68,9 +71,9 @@ export default function SearchPostsResults({ type }: SearchPostsResultsProps) {
           </IonButtons>
         </IonToolbar>
       </IonHeader>
-      <IonContent>
+      <FeedContent>
         <PostCommentFeed fetchFn={fetchFn} />
-      </IonContent>
+      </FeedContent>
     </IonPage>
   );
 }

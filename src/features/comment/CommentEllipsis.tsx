@@ -1,7 +1,8 @@
+import styled from "@emotion/styled";
 import {
   IonActionSheet,
   IonIcon,
-  useIonModal,
+  useIonActionSheet,
   useIonRouter,
   useIonToast,
 } from "@ionic/react";
@@ -21,22 +22,21 @@ import {
 } from "ionicons/icons";
 import { CommentView } from "lemmy-js-client";
 import { useContext, useState } from "react";
-import { useBuildGeneralBrowseLink } from "../../helpers/routes";
-import { useAppDispatch, useAppSelector } from "../../store";
-import { handleSelector } from "../auth/authSlice";
+import { notEmpty } from "../../helpers/array";
 import {
   getHandle,
   getRemoteHandle,
   canModify as isCommentMutable,
+  share,
 } from "../../helpers/lemmy";
-import { deleteComment, saveComment, voteOnComment } from "./commentSlice";
-import styled from "@emotion/styled";
-import { notEmpty } from "../../helpers/array";
-import useCollapseRootComment from "./useCollapseRootComment";
-import { FeedContext } from "../feed/FeedContext";
-import SelectText from "../../pages/shared/SelectTextModal";
-import { PageContext } from "../auth/PageContext";
+import { useBuildGeneralBrowseLink } from "../../helpers/routes";
 import { saveError, voteError } from "../../helpers/toastMessages";
+import { useAppDispatch, useAppSelector } from "../../store";
+import { PageContext } from "../auth/PageContext";
+import { handleSelector, isDownvoteEnabledSelector } from "../auth/authSlice";
+import { CommentsContext } from "./CommentsContext";
+import { deleteComment, saveComment, voteOnComment } from "./commentSlice";
+import useCollapseRootComment from "./useCollapseRootComment";
 
 const StyledIonIcon = styled(IonIcon)`
   padding: 8px 12px;
@@ -50,29 +50,33 @@ interface MoreActionsProps {
   rootIndex: number | undefined;
 }
 
-export default function MoreActions({ comment, rootIndex }: MoreActionsProps) {
+export default function MoreActions({
+  comment: commentView,
+  rootIndex,
+}: MoreActionsProps) {
   const buildGeneralBrowseLink = useBuildGeneralBrowseLink();
   const dispatch = useAppDispatch();
   const [open, setOpen] = useState(false);
-  const { refresh: refreshPost } = useContext(FeedContext);
+  const { prependComments } = useContext(CommentsContext);
   const myHandle = useAppSelector(handleSelector);
   const [present] = useIonToast();
-  const collapseRootComment = useCollapseRootComment(comment, rootIndex);
+  const [presentActionSheet] = useIonActionSheet();
+  const collapseRootComment = useCollapseRootComment(commentView, rootIndex);
+
+  const commentById = useAppSelector((state) => state.comment.commentById);
 
   const router = useIonRouter();
 
+  // Comment from slice might be more up to date, e.g. edits
+  const comment = commentById[commentView.comment.id] ?? commentView.comment;
+
   const {
-    page,
     presentLoginIfNeeded,
     presentCommentReply,
     presentCommentEdit,
     presentReport,
+    presentSelectText,
   } = useContext(PageContext);
-
-  const [selectText, onDismissSelectText] = useIonModal(SelectText, {
-    text: comment.comment.content,
-    onDismiss: (data: string, role: string) => onDismissSelectText(data, role),
-  });
 
   const commentVotesById = useAppSelector(
     (state) => state.comment.commentVotesById
@@ -81,10 +85,12 @@ export default function MoreActions({ comment, rootIndex }: MoreActionsProps) {
     (state) => state.comment.commentSavedById
   );
 
-  const myVote = commentVotesById[comment.comment.id] ?? comment.my_vote;
-  const mySaved = commentSavedById[comment.comment.id] ?? comment.saved;
+  const myVote = commentVotesById[comment.id] ?? commentView.my_vote;
+  const mySaved = commentSavedById[comment.id] ?? commentView.saved;
 
-  const isMyComment = getRemoteHandle(comment.creator) === myHandle;
+  const downvoteAllowed = useAppSelector(isDownvoteEnabledSelector);
+  const isMyComment = getRemoteHandle(commentView.creator) === myHandle;
+  const commentExists = !comment.deleted && !comment.removed;
 
   return (
     <>
@@ -106,11 +112,13 @@ export default function MoreActions({ comment, rootIndex }: MoreActionsProps) {
             role: "upvote",
             icon: arrowUpOutline,
           },
-          {
-            text: myVote !== -1 ? "Downvote" : "Undo Downvote",
-            role: "downvote",
-            icon: arrowDownOutline,
-          },
+          downvoteAllowed
+            ? {
+                text: myVote !== -1 ? "Downvote" : "Undo Downvote",
+                role: "downvote",
+                icon: arrowDownOutline,
+              }
+            : undefined,
           {
             text: !mySaved ? "Save" : "Unsave",
             role: "save",
@@ -135,13 +143,15 @@ export default function MoreActions({ comment, rootIndex }: MoreActionsProps) {
             role: "reply",
             icon: arrowUndoOutline,
           },
+          commentExists && comment.content
+            ? {
+                text: "Select Text",
+                role: "select-text",
+                icon: textOutline,
+              }
+            : undefined,
           {
-            text: "Select Text",
-            role: "select-text",
-            icon: textOutline,
-          },
-          {
-            text: getHandle(comment.creator),
+            text: getHandle(commentView.creator),
             role: "person",
             icon: personOutline,
           },
@@ -167,17 +177,14 @@ export default function MoreActions({ comment, rootIndex }: MoreActionsProps) {
             role: "cancel",
           },
         ].filter(notEmpty)}
+        onDidDismiss={() => setOpen(false)}
         onWillDismiss={async (e) => {
-          setOpen(false);
-
           switch (e.detail.role) {
             case "upvote":
               if (presentLoginIfNeeded()) return;
 
               try {
-                await dispatch(
-                  voteOnComment(comment.comment.id, myVote === 1 ? 0 : 1)
-                );
+                await dispatch(voteOnComment(comment.id, myVote === 1 ? 0 : 1));
               } catch (error) {
                 present(voteError);
               }
@@ -188,7 +195,7 @@ export default function MoreActions({ comment, rootIndex }: MoreActionsProps) {
 
               try {
                 await dispatch(
-                  voteOnComment(comment.comment.id, myVote === -1 ? 0 : -1)
+                  voteOnComment(comment.id, myVote === -1 ? 0 : -1)
                 );
               } catch (error) {
                 present(voteError);
@@ -199,60 +206,77 @@ export default function MoreActions({ comment, rootIndex }: MoreActionsProps) {
               if (presentLoginIfNeeded()) return;
 
               try {
-                await dispatch(saveComment(comment.comment.id, !mySaved));
+                await dispatch(saveComment(comment.id, !mySaved));
               } catch (error) {
                 present(saveError);
               }
               break;
-            case "edit":
+            case "edit": {
               presentCommentEdit(comment);
               break;
+            }
             case "delete":
-              try {
-                await dispatch(deleteComment(comment.comment.id));
-              } catch (error) {
-                present({
-                  message: "Problem deleting comment. Please try again.",
-                  duration: 3500,
-                  position: "bottom",
-                  color: "danger",
-                });
+              presentActionSheet({
+                buttons: [
+                  {
+                    text: "Delete Comment",
+                    role: "destructive",
+                    handler: () => {
+                      (async () => {
+                        try {
+                          await dispatch(deleteComment(comment.id));
+                        } catch (error) {
+                          present({
+                            message:
+                              "Problem deleting comment. Please try again.",
+                            duration: 3500,
+                            position: "bottom",
+                            color: "danger",
+                          });
 
-                throw error;
-              }
+                          throw error;
+                        }
 
-              present({
-                message: "Comment deleted!",
-                duration: 3500,
-                position: "bottom",
-                color: "primary",
+                        present({
+                          message: "Comment deleted!",
+                          duration: 3500,
+                          position: "bottom",
+                          color: "primary",
+                        });
+                      })();
+                    },
+                  },
+                  {
+                    text: "Cancel",
+                    role: "cancel",
+                  },
+                ],
               });
+
               break;
             case "reply": {
               if (presentLoginIfNeeded()) return;
 
-              const replied = await presentCommentReply(comment);
+              const reply = await presentCommentReply(commentView);
 
-              if (replied) refreshPost();
+              if (reply) prependComments([reply]);
               break;
             }
             case "select-text":
-              return selectText({
-                presentingElement: page,
-              });
+              return presentSelectText(comment.content);
             case "person":
               router.push(
-                buildGeneralBrowseLink(`/u/${getHandle(comment.creator)}`)
+                buildGeneralBrowseLink(`/u/${getHandle(commentView.creator)}`)
               );
               break;
             case "share":
-              navigator.share({ url: comment.comment.ap_id });
+              share(comment);
               break;
             case "collapse":
               collapseRootComment();
               break;
             case "report":
-              presentReport(comment);
+              presentReport(commentView);
               break;
           }
         }}
